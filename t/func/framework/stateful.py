@@ -191,6 +191,13 @@ class NetworkStateful(Stateful, abc.ABC):
         return self.ipv4 or self.ipv6
 
     @property
+    def ip_mapped(self) -> str:
+        if not self.ipv4:
+            raise ValueError("The mapped address available only for ipv4 addresses")
+
+        return f"::ffff:{self.ipv4}"
+
+    @property
     def ip_testing(self) -> str:
         """
         Return the ip address that used in the
@@ -428,7 +435,10 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
         """
         Set socket options
         """
+        # turn on socket async mode
         sock.setblocking(False)
+
+        # mark each socket with the special mark that can be verified with the iptables
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_MARK, struct.pack("I", self.sock_marker))
 
     async def on_socket_created(self):
@@ -440,9 +450,11 @@ class SocketBaseNetworkStateful(NetworkStateful, abc.ABC):
         """
         Create new socket, bind with params and call the callback function
         """
+        _, stdout, _ = await self.run_host_cmd(cmd="ip a")
+        self.logger.debug(stdout)
+
         self.socket = self.create_socket()
         self.set_socket_options(self.socket)
-        stdout, _, stderr = await run_cmd(cmd="ip a", logger=self.logger, log_output=True)
         self.socket.bind(self.bind_params)
 
         await self.on_socket_created()

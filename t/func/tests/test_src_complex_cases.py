@@ -8,7 +8,6 @@ import pytest
 from framework.cmp import check_connection
 from framework.stateful import RegularKernelSocketNetworkStateful
 from framework.xfw import XFW
-from tests.conftest import ip_version
 
 
 @pytest.fixture
@@ -25,6 +24,16 @@ def error_message(true_if_allowed, server):
         msg = f"Server {server.ip_testing}:{server.port} is not allowed"
 
     yield msg
+
+
+@pytest.fixture(params=["src_ip", "src_port"], ids=["ip", "port"])
+def src_policy(request) -> str:
+    return request.param
+
+
+@pytest.fixture
+def src_value(client, src_policy) -> str:
+    return getattr(client, "ip") if src_policy == "src_ip" else f":{getattr(client, "port")}"
 
 
 @pytest.mark.skip("ISSUE: 253")
@@ -92,15 +101,17 @@ async def test_src_change_ratelimit(
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
     src_defaults: str,
+    src_policy: str,
+    src_value: str,
 ):
 
     await xfw.rules_set(f"""
             xfw {{
                 ratelimit=a pps=0 bps=0;
                 ratelimit=b pps=10 bps=1000;
-                defaults {{ src_ip {ip_version}: {src_defaults}; }}
+                defaults {{ {src_policy} {ip_version}: {src_defaults}; }}
                 src=extended_group {ip_version}.{protocol} : ratelimit=a {{
-                    {client.ip_testing}
+                    {src_value}
                 }}
             }}
         """)
@@ -112,7 +123,7 @@ async def test_src_change_ratelimit(
     await xfw.rules_patch(f"""
         xfw {{
             src=extended_group {ip_version}.{protocol} : ratelimit=b {{
-                {client.ip_testing}
+                {src_value}
             }}
         }}
         """)
@@ -136,14 +147,16 @@ async def test_src_change_ratelimit_value(
     client: RegularKernelSocketNetworkStateful,
     establish_connection,
     src_defaults: str,
+    src_policy: str,
+    src_value: str,
 ):
 
     await xfw.rules_set(f"""
             xfw {{
                 ratelimit=a pps=0 bps=0;
-                defaults {{ src_ip {ip_version}: {src_defaults}; }}
+                defaults {{ {src_policy} {ip_version}: {src_defaults}; }}
                 src=extended_group {ip_version}.{protocol} : ratelimit=a {{
-                    {client.ip_testing}
+                    {src_value}
                 }}
             }}
         """)
@@ -156,7 +169,7 @@ async def test_src_change_ratelimit_value(
         xfw {{
             ratelimit=b pps=10 bps=1000;
             src=extended_group {ip_version}.{protocol} : ratelimit=b {{
-                {client.ip_testing}
+                {src_value}
             }}
         }}
         """)
@@ -182,14 +195,16 @@ async def test_src_switch_ratelimit_to_another_rule(
     src_defaults: str,
     true_if_allowed: bool,
     error_message: str,
+    src_policy: str,
+    src_value: str,
 ):
 
     await xfw.rules_set(f"""
             xfw {{
                 ratelimit=a pps=10 bps=1000;
-                defaults {{ src_ip {ip_version}: block; }}
+                defaults {{ {src_policy} {ip_version}: block; }}
                 src=extended_group {ip_version}.{protocol} : ratelimit=a {{
-                    {client.ip_testing}
+                    {src_value}
                 }}
             }}
         """)
@@ -198,7 +213,7 @@ async def test_src_switch_ratelimit_to_another_rule(
     await xfw.rules_patch(f"""
         xfw {{
             src=extended_group {ip_version}.{protocol} : {src_defaults} {{
-                {client.ip_testing}
+                {src_value}
             }}
         }}
         """)
